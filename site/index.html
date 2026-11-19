@@ -16,12 +16,26 @@ table{border-collapse:collapse;width:100%;font-size:13px;display:block;overflow-
 code,.f{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:var(--card);padding:1px 5px;border-radius:4px}.f{display:block;padding:6px 10px;margin:4px 0}
 .pos{color:var(--good)}.neg{color:var(--bad)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
 #win{max-height:220px;overflow:auto;font-size:12px}
+
+.hero{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--card)}
+.badge{display:inline-block;font-size:34px;font-weight:800;letter-spacing:1px;padding:2px 18px;border-radius:10px;color:#fff}
+.b-BUY{background:#13795b}.b-SELL{background:#b42318}.b-HOLD{background:#8a6d00}
+.slider{position:relative;margin:14px 0 4px;height:14px;border-radius:7px;background:linear-gradient(90deg,#b42318,#d9a400 50%,#13795b)}
+.slider i{position:absolute;top:-5px;width:6px;height:24px;border-radius:3px;background:var(--fg);transform:translateX(-3px);box-shadow:0 0 0 2px var(--bg)}
+.ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--mut)}
+.pill.bu{color:#fff;background:#13795b;border-color:#13795b}.pill.be{color:#fff;background:#b42318;border-color:#b42318}.pill.ne{color:var(--mut)}
+.bar{display:inline-block;height:10px;border-radius:3px;vertical-align:middle}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.cols .card b{font-size:14px;display:block;margin-bottom:2px}.cols .card{font-size:13px}
+details.old>summary{cursor:pointer;color:var(--mut);margin:18px 0 6px}
 </style></head><body><main>
 <h1>Bollinger / deviation study: Ethos and KDDL</h1>
 <div class="note">Research and indicator study, <b>not advice</b>. Daily closes from Yahoo Finance (single source, split/rights-adjusted, dividend-unadjusted). An unusual price position is not evidence of a profitable opportunity: the evidence tables below show no reliable edge. Data as of <span id="gen"></span>.</div>
 <div class="row tabs" id="tabs"></div>
 
-<h2>0. The technical call (high level)</h2>
+<div id="final"></div>
+<details class="old"><summary>Earlier probability model and band study details (kept for reference; the probability model showed no predictive skill)</summary>
+<h2>Probability model</h2>
 <div id="call"></div>
 <div class="row"><div id="c_bar" style="flex:1;min-width:320px;height:300px"></div><div id="c_cal" style="flex:1;min-width:320px;height:300px"></div></div>
 <div id="c_hist" style="height:300px"></div>
@@ -30,7 +44,7 @@ code,.f{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:va
 <div class="row">Show history of: <select id="pick"></select></div><div id="c_param" style="height:260px"></div>
 <div class="note"><b>How it is built.</b> Layer 1 (posture) is a fixed rule count: 5 yes/no trend checks plus a stretch flag (|z| &ge; 2). It describes the chart; it does not predict. Layer 2 (probability): for each of 6 parameters, the stock's own history gives P(close 10 sessions later is higher) for the current bucket, shrunk toward the stock's overall base rate (20 pseudo-observations). The composite averages the six log-odds shifts with equal weights (decided in advance, not fitted). Everything is walk-forward: on any date it only uses outcomes already known then. Bollinger Bands, +1/+2 SD and the 20-day average are one parameter (z20), because %B = 0.5 + z20/4: they carry the same information. AUC is the walk-forward test of skill: 0.50 = coin flip, above 0.58 = useful, below 0.50 = worse than a coin flip.</div>
 
-<h2>1. Where it stands</h2><div class="cards" id="cards"></div><div class="row" id="conds"></div>
+<h2>Band study: where it stands</h2><div class="cards" id="cards"></div><div class="row" id="conds"></div>
 
 <h2>2. Chart</h2>
 <div class="row">Markers: <select id="rule"></select>
@@ -64,11 +78,12 @@ code,.f{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:va
 <tr><td>B lower-band breach</td><td>z20 &le; -2</td><td>re-entry: z20 back above -2</td><td>close below lowest close of the breach</td><td>same</td></tr>
 <tr><td>C stretch above SMA50</td><td>z50 &ge; 2</td><td>-</td><td>close below SMA50</td><td>|z50| &lt; 1 and &ge; 20 sessions</td></tr></table>
 <div class="note" style="margin-top:6px">An alert means the close is statistically unusual against its own recent range. It does <b>not</b> establish direction, a profitable trade or a reason for the move.</div>
-</main>
+</details></main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
 <script src="data.js"></script>
+<script src="final_kddl.js"></script>
 <script>
-const D=window.DATA,$=s=>document.querySelector(s);let cur="ETHOSLTD";
+const D=window.DATA,$=s=>document.querySelector(s);let cur="KDDL";
 const NAMES={ETHOSLTD:"Ethos Ltd (ETHOSLTD)",KDDL:"KDDL Ltd (KDDL)"};
 const pct=x=>x==null?"-":(x*100).toFixed(2)+"%",num=(x,d=1)=>x==null?"-":Number(x).toFixed(d);
 $("#gen").textContent=D.generated;$("#oos").textContent="1 Jul 2024 (Ethos) / 1 Jan 2023 (KDDL)";
@@ -80,7 +95,7 @@ function render(){document.querySelectorAll("#tabs button").forEach(b=>b.classLi
  const S=D.stocks[cur];$("#rule").innerHTML="";Object.keys(S.events).forEach(k=>$("#rule").add(new Option(k,k)));
  const st=S.status;$("#cards").innerHTML=[["Close "+st.date,"₹"+num(st.close)],["SMA20","₹"+num(st.sma20)],["SMA50","₹"+num(st.sma50)],["SMA200","₹"+num(st.sma200)],["% vs SMA20",pct(st.pct20)],["% vs SMA50",pct(st.pct50)],["z20 (SD)",num(st.z20,2)],["z50 (SD)",num(st.z50,2)],["%B",num(st.pctb,2)],["Band",num(st.lb,0)+" to "+num(st.ub,0)]].map(c=>`<div class="card"><span>${c[0]}</span><b>${c[1]}</b></div>`).join("");
  $("#conds").innerHTML=Object.entries(st.conditions).map(([k,v])=>`<span class="pill ${v?"on":"off"}">${v?"MET":"not met"}: ${k}</span>`).join("");
- $("#day").min=S.series.dates[60];$("#day").max=st.date;$("#day").value=st.date;chart();calc();evidence();callSec()}
+ $("#day").min=S.series.dates[60];$("#day").max=st.date;$("#day").value=st.date;chart();calc();evidence();callSec();finalSec()}
 function chart(){const S=D.stocks[cur],s=S.series,sel=$("#rule").value,ev=($("#raw").checked?S.rawdays:S.events)[sel]||[];
  const idx=new Map(s.dates.map((d,i)=>[d,i]));const ys=ev.map(d=>s.close[idx.get(d)]);
  const T=[{x:s.dates,y:s.ub,line:{width:0},hoverinfo:"skip",showlegend:false},{x:s.dates,y:s.lb,fill:"tonexty",fillcolor:"rgba(47,111,237,.13)",line:{width:0},name:"Bollinger(20,2)"},
@@ -128,5 +143,52 @@ function callSec(){const sc=D.scores[cur],t=sc.today,po=sc.posture,col=t.lean.st
 function paramChart(){const sc=D.scores[cur],k=$("#pick").value,S=D.stocks[cur].series,p=sc.today.params[k];const map={z20:S.z20,z50:S.z50,spr:sc.raw.spr,p200:sc.raw.p200,roc:sc.raw.roc,bwp:sc.raw.bwp},y=map[k],n=y.length-500,sc1=(k=="z20"||k=="z50")?1:100;
  Plotly.react("c_param",[{x:S.dates.slice(n),y:y.slice(n).map(v=>v==null?null:v*sc1),name:p.label,line:{color:"#2f6fed"}}],{title:{text:p.label+" with bucket edges (dashed); today highlighted",font:{size:13}},margin:{t:30,l:50,r:10,b:30},shapes:sc.edges[k].map(e=>({type:"line",xref:"paper",x0:0,x1:1,y0:e*sc1,y1:e*sc1,line:{dash:"dash",color:"gray",width:1}})).concat(p.lo!=null||p.hi!=null?[{type:"rect",xref:"paper",x0:0,x1:1,y0:(p.lo==null?-1e9:p.lo*sc1),y1:(p.hi==null?1e9:p.hi*sc1),fillcolor:"rgba(47,111,237,.12)",line:{width:0}}]:[]),yaxis:{title:k=="z20"||k=="z50"?"SD":k=="bwp"?"percentile":"%"},paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",font:{color:getComputedStyle(document.body).color,size:11}},{responsive:true})}
 $("#pick").onchange=paramChart;
+
+function finalSec(){const el=$("#final"),F=window.FINAL&&window.FINAL[cur];
+ if(!F){el.innerHTML=`<div class="hero"><b>Final call for ${NAMES[cur]}: not built yet.</b><br>We are finalising the method on KDDL first, then repeating it for Ethos. Switch to the KDDL tab.</div>`;return}
+ const c=Math.round(F.confidence*100),a=F.analog,L=F.levels,S=F.scorecard,P=(x,d=1)=>x==null?"-":(x*100).toFixed(d)+"%",sg=x=>(x>=0?"+":"")+(x*100).toFixed(1)+"%";
+ const pill=v=>`<span class="pill ${v=="Bullish"?"bu":v=="Bearish"?"be":"ne"}">${v}</span>`,get=n=>S.find(x=>x.name.startsWith(n));
+ const mx=Math.max(...S.map(x=>Math.max(Math.abs(x.in20),Math.abs(x.out20))));
+ const bars=(x)=>`<div style="text-align:left;white-space:nowrap"><span class="bar" style="width:${Math.abs(x.in20)/mx*110}px;background:#2f6fed"></span> ${sg(x.in20)} when ON<br><span class="bar" style="width:${Math.abs(x.out20)/mx*110}px;background:#98a2b3"></span> ${sg(x.out20)} when OFF</div>`;
+ const st=F.strategies,A_=st.find(x=>x.name.startsWith("A")),BH=st.find(x=>x.name.startsWith("Buy"));
+ el.innerHTML=`
+ <div class="hero"><div class="row" style="gap:16px"><span class="badge b-${F.call}">${F.call}</span><div><b style="font-size:18px">${NAMES[cur]}</b> &nbsp; ₹${F.close.toLocaleString()} &nbsp;<span style="color:var(--mut)">close ${F.asof}</span><br><span style="color:var(--mut)">Technical rating from the maths below. Not personal advice.</span></div></div>
+ <div style="margin-top:10px"><b>Confidence ${c}%</b> <span style="color:var(--mut);font-size:13px">= how often the same setup was followed by a higher close 20 sessions later (${a.hits} of ${a.n} past cases), pulled toward 50% because the sample is small</span></div>
+ <div class="slider"><i style="left:${c}%"></i></div><div class="ticks"><span>0 no confidence</span><span>50 coin flip</span><span>100 certain</span></div>
+ <div class="cols" style="margin-top:12px">
+  <div class="card"><b>Why BUY</b>KDDL is in an uptrend on every tenure (price ${sg(F.close/L.sma200-1)} vs 200-day, ${sg(F.close/L.sma50-1)} vs 50-day). Historically, 20-session returns averaged ${sg(get("Medium").in20)} in this state against ${sg(get("Medium").out20)} outside it, higher closes ${P(get("Medium").hit_in20,0)} vs ${P(get("Medium").hit_out20,0)} of the time. Being stretched has not made it fall: past stretched uptrends kept rising.</div>
+  <div class="card"><b>Biggest risk</b>The ${(F.analog.n)} past cases that look like today (stretched uptrend after a 12%+ jump) averaged only ${sg(a.mean5)} over the next 5 sessions, then ${sg(a.mean20)} over 20; typical worst dip on the way ${sg(a.avg_mae20)}, worst full case ${sg(a.worst20)}. The edge shows up over weeks, not days. Also, the setup adds little over a plain uptrend (${sg(a.mean20)} vs ${sg(a.base20)}).</div>
+  <div class="card"><b>What flips it to SELL</b>A close below the 50-day average (₹${L.exit_close_below.toLocaleString()}, ${sg(L.risk_to_exit)} from here) or the 50-day falling below the 200-day (₹${L.sma200.toLocaleString()}). Until then the trend rule stays long. Stretch alone is not a sell signal.</div></div></div>
+
+ <h2>Step 1-2: the six parameters, rated one by one</h2>
+ <div class="note">Each parameter is a yes/no state. For each, I compare what happened over the next 20 sessions (about a month) when it was ON vs OFF across KDDL's history since 2016. All six are ON today.</div>
+ <table><tr><th>Parameter</th><th>Reading today</th><th>20-session average return</th><th>Higher close</th><th>Rating (1 month)</th><th>Next 5 sessions</th><th>Independent cases</th></tr>
+ ${S.map(x=>`<tr><td><b>${x.name}</b><br><span style="color:var(--mut);white-space:normal;display:block;max-width:230px;font-size:12px">${x.rule}</span></td><td style="text-align:left;white-space:normal;min-width:190px">${x.today}</td><td>${bars(x)}</td><td>${P(x.hit_in20,0)} vs ${P(x.hit_out20,0)}</td><td>${pill(x.verdict)}</td><td>${pill(x.short_term)}<br><span style="font-size:11px;color:var(--mut)">${sg(x.in5)} vs ${sg(x.out5)}</span></td><td>~${x.n_eff}</td></tr>`).join("")}</table>
+ <div class="note" style="margin-top:6px"><b>Reading it:</b> the three trend parameters and momentum carry the evidence. The stretch (SD/Bollinger) and volume-thrust states have been roughly neutral over a month and slightly soft over 5 sessions: they argue for patience, not for selling. Bollinger Bands, +1SD and +2SD all describe the same stretch number, so they count once.</div>
+
+ <h2>Step 3: strategy, tested on the full history</h2>
+ <div class="note">Five rules were fixed in advance and simulated since 2016 with next-day open execution, 0.15% slippage, STT, stamp duty and exchange fees (before income tax). "OOS" = from ${F.oos_start.slice(0,4)} onward.</div>
+ <table><tr><th>Strategy</th><th>CAGR</th><th>Worst fall</th><th>Sharpe</th><th>Sharpe OOS</th><th>Time invested</th><th>Trades</th><th>Wins</th><th>Long now?</th></tr>
+ ${st.map(x=>`<tr><td>${x.name}</td><td>${P(x.full.CAGR,0)}</td><td class="neg">${P(x.full.MaxDD,0)}</td><td>${x.full.Sharpe.toFixed(2)}</td><td>${x.oos.Sharpe.toFixed(2)}</td><td>${P(x.full.Invested,0)}</td><td>${x.trades||"-"}</td><td>${x.hit==null?"-":P(x.hit,0)}</td><td>${x.now_long?"yes":"no"}</td></tr>`).join("")}</table>
+ <div class="row"><div id="f_eq" style="flex:1;min-width:320px;height:300px"></div><div id="f_dd" style="flex:1;min-width:320px;height:300px"></div></div>
+ <div class="note"><b>What the simulations say:</b> only the trend rule (A) is worth using: it earned ${P(A_.full.CAGR,0)} a year with a worst fall of ${P(A_.full.MaxDD,0)} versus ${P(BH.full.MaxDD,0)} for buy-and-hold, but it did not beat buy-and-hold on return per unit of risk (Sharpe ${A_.full.Sharpe.toFixed(2)} vs ${BH.full.Sharpe.toFixed(2)}). Its value is cutting the deep drawdowns. Dip-buying, mean-reversion at the lower band and breakouts did not work on KDDL. Selling when stretched (B) did not help either.</div>
+
+ <h2>What to do when: the playbook</h2>
+ <table><tr><th>If this happens</th><th>Rating</th><th>Why (from the tests)</th></tr>
+ <tr><td>Close above 50-day, 50-day above 200-day (today)</td><td>${pill("Bullish")} BUY / stay long</td><td>20-session average ${sg(get("Medium").in20)} vs ${sg(get("Medium").out20)} outside the state; strategy A kept the stock's upside with a smaller drawdown.</td></tr>
+ <tr><td>Stretched 2+ SD above the 50-day, but trend intact</td><td>${pill("Bullish")} do not sell on stretch</td><td>Past cases: ${sg(get("Stretch").in20)} over 20 sessions vs ${sg(get("Stretch").out20)}; selling into stretch (B) did worse than staying with the trend.</td></tr>
+ <tr><td>After a spike on huge volume (like 17-18 Nov)</td><td>${pill("Neutral")} expect noise for a week</td><td>Next 5 sessions averaged ${sg(a.mean5)}; the gain came over 20 sessions.</td></tr>
+ <tr><td>Dip to the lower band while still above the 200-day</td><td>${pill("Bullish")} do not panic-sell</td><td>Dip-buying earned less than just holding the trend, so it is not a reason to add or exit.</td></tr>
+ <tr><td>Lower-band breach with the trend already broken</td><td>${pill("Neutral")} no bounce edge</td><td>Mean-reversion rule D had no edge (Sharpe near 0).</td></tr>
+ <tr><td>Close below the 50-day average, or 50-day below 200-day</td><td>${pill("Bearish")} SELL / exit</td><td>This is the exit rule of the strategy that survived testing.</td></tr></table>
+
+ <h2>Evidence for today's setup</h2>
+ <div id="f_an" style="height:300px"></div>
+ <div class="note">Each dot is a past day when KDDL was in an uptrend, 2+ SD stretched, after a 12%+ three-day jump (events at least 10 sessions apart). ${a.hits} of ${a.n} were higher 20 sessions later (${a.is_n} before ${F.oos_start.slice(0,4)}: ${P(a.is_hit,0)}; ${a.oos_n} since: ${P(a.oos_hit,0)}). Small sample: treat the confidence figure as a rough guide, not a precise probability. Past behaviour of one stock can change.</div>`;
+ const tc=getComputedStyle(document.body).color,base={paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",font:{color:tc,size:11},margin:{t:30,l:50,r:10,b:30}},cv=F.curves,col={"Buy & hold":"#888"};
+ const keys=Object.keys(cv.equity),cs=["#888","#2f6fed","#f08c00","#a855f7","#d92d20","#13795b"];
+ Plotly.react("f_eq",keys.map((k,i)=>({x:cv.dates,y:cv.equity[k],name:k.length>22?k.slice(0,22)+"..":k,line:{color:cs[i],width:k.startsWith("A")||k.startsWith("Buy")?2:1}})),{...base,title:{text:"Growth of ₹1 (log scale)",font:{size:13}},yaxis:{type:"log"},showlegend:true,legend:{font:{size:9}}},{responsive:true});
+ Plotly.react("f_dd",["Buy & hold",keys.find(k=>k.startsWith("A"))].map((k,i)=>({x:cv.dates,y:cv.drawdown[k].map(v=>v*100),name:k.slice(0,20),line:{color:i?"#2f6fed":"#888"},fill:"tozeroy"})),{...base,title:{text:"Fall from peak (%): trend rule vs buy & hold",font:{size:13}}},{responsive:true});
+ Plotly.react("f_an",[{x:a.events.map(e=>e.date),y:a.events.map(e=>e.r20*100),mode:"markers",marker:{size:11,color:a.events.map(e=>e.r20>=0?"#13795b":"#b42318")},name:"20-session return",text:a.events.map(e=>"5d "+sg(e.r5)+", 10d "+sg(e.r10))}],{...base,title:{text:"What followed 20 sessions after each similar day (%)",font:{size:13}},shapes:[{type:"line",xref:"paper",x0:0,x1:1,y0:0,y1:0,line:{color:"gray"}},{type:"line",xref:"paper",x0:0,x1:1,y0:a.mean20*100,y1:a.mean20*100,line:{dash:"dash",color:"#2f6fed"}}],yaxis:{title:"%"}},{responsive:true})}
 render();
 </script></body></html>
