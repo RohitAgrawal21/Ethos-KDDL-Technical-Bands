@@ -21,6 +21,15 @@ code,.f{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:va
 <div class="note">Research and indicator study, <b>not advice</b>. Daily closes from Yahoo Finance (single source, split/rights-adjusted, dividend-unadjusted). An unusual price position is not evidence of a profitable opportunity: the evidence tables below show no reliable edge. Data as of <span id="gen"></span>.</div>
 <div class="row tabs" id="tabs"></div>
 
+<h2>0. The technical call (high level)</h2>
+<div id="call"></div>
+<div class="row"><div id="c_bar" style="flex:1;min-width:320px;height:300px"></div><div id="c_cal" style="flex:1;min-width:320px;height:300px"></div></div>
+<div id="c_hist" style="height:300px"></div>
+<h3 style="font-size:15px;margin:14px 0 4px">Drill down: the six parameters</h3>
+<table id="params"></table>
+<div class="row">Show history of: <select id="pick"></select></div><div id="c_param" style="height:260px"></div>
+<div class="note"><b>How it is built.</b> Layer 1 (posture) is a fixed rule count: 5 yes/no trend checks plus a stretch flag (|z| &ge; 2). It describes the chart; it does not predict. Layer 2 (probability): for each of 6 parameters, the stock's own history gives P(close 10 sessions later is higher) for the current bucket, shrunk toward the stock's overall base rate (20 pseudo-observations). The composite averages the six log-odds shifts with equal weights (decided in advance, not fitted). Everything is walk-forward: on any date it only uses outcomes already known then. Bollinger Bands, +1/+2 SD and the 20-day average are one parameter (z20), because %B = 0.5 + z20/4: they carry the same information. AUC is the walk-forward test of skill: 0.50 = coin flip, above 0.58 = useful, below 0.50 = worse than a coin flip.</div>
+
 <h2>1. Where it stands</h2><div class="cards" id="cards"></div><div class="row" id="conds"></div>
 
 <h2>2. Chart</h2>
@@ -71,7 +80,7 @@ function render(){document.querySelectorAll("#tabs button").forEach(b=>b.classLi
  const S=D.stocks[cur];$("#rule").innerHTML="";Object.keys(S.events).forEach(k=>$("#rule").add(new Option(k,k)));
  const st=S.status;$("#cards").innerHTML=[["Close "+st.date,"₹"+num(st.close)],["SMA20","₹"+num(st.sma20)],["SMA50","₹"+num(st.sma50)],["SMA200","₹"+num(st.sma200)],["% vs SMA20",pct(st.pct20)],["% vs SMA50",pct(st.pct50)],["z20 (SD)",num(st.z20,2)],["z50 (SD)",num(st.z50,2)],["%B",num(st.pctb,2)],["Band",num(st.lb,0)+" to "+num(st.ub,0)]].map(c=>`<div class="card"><span>${c[0]}</span><b>${c[1]}</b></div>`).join("");
  $("#conds").innerHTML=Object.entries(st.conditions).map(([k,v])=>`<span class="pill ${v?"on":"off"}">${v?"MET":"not met"}: ${k}</span>`).join("");
- $("#day").min=S.series.dates[60];$("#day").max=st.date;$("#day").value=st.date;chart();calc();evidence()}
+ $("#day").min=S.series.dates[60];$("#day").max=st.date;$("#day").value=st.date;chart();calc();evidence();callSec()}
 function chart(){const S=D.stocks[cur],s=S.series,sel=$("#rule").value,ev=($("#raw").checked?S.rawdays:S.events)[sel]||[];
  const idx=new Map(s.dates.map((d,i)=>[d,i]));const ys=ev.map(d=>s.close[idx.get(d)]);
  const T=[{x:s.dates,y:s.ub,line:{width:0},hoverinfo:"skip",showlegend:false},{x:s.dates,y:s.lb,fill:"tonexty",fillcolor:"rgba(47,111,237,.13)",line:{width:0},name:"Bollinger(20,2)"},
@@ -95,5 +104,29 @@ function evidence(){const S=D.stocks[cur],h=+$("#hor").value,rows=S.tables[$("#p
  $("#ev").innerHTML="<tr><th>Rule</th><th>raw days</th><th>n</th><th>mean</th><th>median</th><th>hit</th><th>worst</th><th>avg worst close (MAE)</th><th>baseline</th><th>excess</th><th>90% CI of mean</th></tr>"+
  rows.map(r=>`<tr><td>${r.rule}</td><td>${r.raw}</td><td>${r.n}</td>${cell(r.mean,1)}${cell(r.med,1)}<td>${Math.round(r.hit*100)}%</td>${cell(r.worst)}${cell(r.mae)}${cell(r.base)}${cell(r.excess,1)}<td>${pct(r.lo)} to ${pct(r.hi)}</td></tr>`).join("");
  $("#sim").innerHTML="<tr><th>Rule / period</th><th>trades</th><th>avg net</th><th>hit</th><th>worst</th><th>compounded</th></tr>"+Object.entries(S.sims).map(([k,v])=>`<tr><td>${k.replace("|"," : ")}</td><td>${v.n}</td>${cell(v.mean_net,1)}<td>${v.hit==null?"-":Math.round(v.hit*100)+"%"}</td>${cell(v.worst)}${cell(v.total,1)}</tr>`).join("")}
+
+const sgn=x=>(x>=0?"+":"")+x.toFixed(1);
+function callSec(){const sc=D.scores[cur],t=sc.today,po=sc.posture,col=t.lean.startsWith("Bull")?"var(--good)":t.lean.startsWith("Bear")?"var(--bad)":"var(--mut)";
+ const noskill=t.confidence.startsWith("None");
+ $("#call").innerHTML=`<div class="cards">
+ <div class="card"><span>Layer 1: posture (describes the chart)</span><b>${po.trend} (${po.trend_points}/5)</b><span>${po.stretch}</span></div>
+ <div class="card"><span>Layer 2: P(higher in ${sc.H} sessions)</span><b>${(t.p_comb*100).toFixed(1)}%</b><span>base rate ${(t.base*100).toFixed(1)}% (edge ${sgn(t.edge_pp)} pp)</span></div>
+ <div class="card"><span>Statistical lean</span><b style="color:${col}">${t.lean}</b><span>edge needed: &plusmn;5 pp</span></div>
+ <div class="card"><span>Does this score predict? (walk-forward AUC)</span><b>${sc.auc_all.toFixed(2)}</b><span>after ${D.params.oos[cur].slice(0,4)}: ${sc.auc_oos.toFixed(2)} | confidence: ${t.confidence}</span></div></div>
+ <div class="note" style="margin-top:8px"><b>In plain words:</b> ${cur=="KDDL"?"KDDL":"Ethos"} has a trend posture of <b>${po.trend.toLowerCase()}</b> (${po.trend_points} of 5 trend checks pass) and is <b>${po.stretch.toLowerCase()}</b>. The six parameters together put the chance of a higher close in ${sc.H} sessions at ${(t.p_comb*100).toFixed(0)}% against a normal ${(t.base*100).toFixed(0)}%, so the statistical lean is <b>${t.lean.toLowerCase()}</b>. ${noskill?"<b>However, this score has not shown any ability to predict in walk-forward testing (AUC below 0.5), so treat the percentage as descriptive, not as a trade call.</b>":"Skill is limited; treat as one input."} Not advice; no trade is implied.</div>`;
+ const P=Object.entries(t.params);
+ Plotly.react("c_bar",[{type:"bar",orientation:"h",y:P.map(p=>p[1].label),x:P.map(p=>p[1].edge_pp),marker:{color:P.map(p=>p[1].edge_pp>=0?"#13795b":"#b42318")},text:P.map(p=>(p[1].p_up*100).toFixed(0)+"% up"),textposition:"auto",hovertemplate:"%{y}<br>edge %{x:.1f} pp<extra></extra>"}],
+  {title:{text:"Each parameter: P(up) minus base rate (pp)",font:{size:13}},margin:{t:30,l:230,r:10,b:30},yaxis:{autorange:"reversed",automargin:true},xaxis:{zeroline:true,title:"percentage points"},paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",font:{color:getComputedStyle(document.body).color,size:11}},{responsive:true});
+ Plotly.react("c_cal",[{type:"bar",x:sc.calibration.map(b=>"Q"+b.bucket+" (P~"+(b.p_mid*100).toFixed(0)+"%)"),y:sc.calibration.map(b=>b.mean_ret*100),marker:{color:"#2f6fed"},text:sc.calibration.map(b=>"hit "+Math.round(b.hit*100)+"%"),textposition:"auto"}],
+  {title:{text:"Did higher scores lead to higher returns? (avg "+sc.H+"-day return by score quintile)",font:{size:13}},margin:{t:30,l:45,r:10,b:60},yaxis:{title:"%",zeroline:true},paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",font:{color:getComputedStyle(document.body).color,size:11}},{responsive:true});
+ const S=D.stocks[cur].series,x=sc.series.dates,n=x.length-500;
+ Plotly.react("c_hist",[{x:S.dates.slice(n),y:S.close.slice(n),name:"Close",line:{color:"#888"},yaxis:"y"},{x:x.slice(n),y:sc.series.p.slice(n).map(v=>v==null?null:v*100),name:"Composite P(up) %",line:{color:"#2f6fed"},yaxis:"y2"},{x:x.slice(n),y:sc.series.base.slice(n).map(v=>v==null?null:v*100),name:"Base rate %",line:{color:"#f08c00",dash:"dot"},yaxis:"y2"}],
+  {title:{text:"Price and the composite probability through time (last ~2 years)",font:{size:13}},margin:{t:30,l:50,r:50,b:30},yaxis:{domain:[.38,1],title:"₹"},yaxis2:{domain:[0,.32],title:"%"},legend:{orientation:"h",y:1.12},paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",font:{color:getComputedStyle(document.body).color,size:11},hovermode:"x unified"},{responsive:true});
+ $("#params").innerHTML="<tr><th>Parameter</th><th>Today's value</th><th>Bucket</th><th>P(up)</th><th>Edge vs base</th><th>Expected "+sc.H+"d return</th><th>Obs in bucket</th><th>Walk-forward AUC</th><th>Meaning</th></tr>"+P.map(([k,p])=>{const f=(v)=>k=="z20"||k=="z50"?v.toFixed(2)+" SD":k=="bwp"?(v*100).toFixed(0)+" pctile":(v*100).toFixed(1)+"%";const b=(p.lo==null?"below ":f(p.lo)+" to ")+(p.hi==null?"above "+f(p.lo):f(p.hi));
+  return `<tr><td>${p.label}</td><td>${f(p.value)}</td><td>${p.lo==null?"< "+f(p.hi):p.hi==null?"> "+f(p.lo):f(p.lo)+" to "+f(p.hi)}</td><td>${(p.p_up*100).toFixed(1)}%</td><td class="${p.edge_pp>=0?"pos":"neg"}">${sgn(p.edge_pp)} pp</td>${cell(p.exp_ret,1)}<td>${p.n_state}</td><td>${p.auc.toFixed(2)}</td><td style="text-align:left;white-space:normal;min-width:260px">${p.meaning}</td></tr>`}).join("");
+ $("#pick").innerHTML="";P.forEach(([k,p])=>$("#pick").add(new Option(p.label,k)));paramChart()}
+function paramChart(){const sc=D.scores[cur],k=$("#pick").value,S=D.stocks[cur].series,p=sc.today.params[k];const map={z20:S.z20,z50:S.z50,spr:sc.raw.spr,p200:sc.raw.p200,roc:sc.raw.roc,bwp:sc.raw.bwp},y=map[k],n=y.length-500,sc1=(k=="z20"||k=="z50")?1:100;
+ Plotly.react("c_param",[{x:S.dates.slice(n),y:y.slice(n).map(v=>v==null?null:v*sc1),name:p.label,line:{color:"#2f6fed"}}],{title:{text:p.label+" with bucket edges (dashed); today highlighted",font:{size:13}},margin:{t:30,l:50,r:10,b:30},shapes:sc.edges[k].map(e=>({type:"line",xref:"paper",x0:0,x1:1,y0:e*sc1,y1:e*sc1,line:{dash:"dash",color:"gray",width:1}})).concat(p.lo!=null||p.hi!=null?[{type:"rect",xref:"paper",x0:0,x1:1,y0:(p.lo==null?-1e9:p.lo*sc1),y1:(p.hi==null?1e9:p.hi*sc1),fillcolor:"rgba(47,111,237,.12)",line:{width:0}}]:[]),yaxis:{title:k=="z20"||k=="z50"?"SD":k=="bwp"?"percentile":"%"},paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",font:{color:getComputedStyle(document.body).color,size:11}},{responsive:true})}
+$("#pick").onchange=paramChart;
 render();
 </script></body></html>

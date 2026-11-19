@@ -1,6 +1,6 @@
 """Export everything the dashboard needs to site/data.js (window.DATA). Run after analyze.py inputs exist: python export_site.py"""
 import json, os, numpy as np, pandas as pd, datetime as dt
-import analyze as A
+import analyze as A, score as SC
 
 def clean(v):
     if isinstance(v, (np.floating, float)): return None if np.isnan(v) else round(float(v), 6)
@@ -30,6 +30,15 @@ for sym in ("ETHOSLTD", "KDDL"):
     status["date"] = df.index[-1].strftime("%Y-%m-%d"); status["vol"] = int(L.vol)
     status["conditions"] = {"A: upper-band breach (z20 >= 2)": bool(L.z20 >= 2), "B: lower-band breach (z20 <= -2)": bool(L.z20 <= -2), "C: stretch above SMA50 (z50 >= 2)": bool(L.z50 >= 2)}
     out["stocks"][sym] = {"series": d, "events": events, "rawdays": rawdays, "tables": tabs, "sims": sims, "status": status}
+out["scores"] = {}
+for sym in ("ETHOSLTD", "KDDL"):
+    sc = SC.run(sym); df = A.feats(A.load(sym)); L = df.iloc[-1]; roc = L.close / df.close.iloc[-21] - 1
+    checks = [("Close above SMA20", bool(L.close > L.sma20)), ("Close above SMA50", bool(L.close > L.sma50)), ("Close above SMA200", bool(L.close > L.sma200)),
+              ("SMA20 above SMA50", bool(L.sma20 > L.sma50)), ("20-day return positive", bool(roc > 0))]
+    n = sum(v for _, v in checks); trend = "Uptrend" if n >= 4 else "Leaning up" if n == 3 else "Leaning down" if n == 2 else "Downtrend"
+    stretch = "Stretched up" if (L.z20 >= 2 or L.z50 >= 2) else "Stretched down" if (L.z20 <= -2 or L.z50 <= -2) else "Not stretched"
+    sc["posture"] = {"trend_points": n, "trend": trend, "checks": checks, "stretch": stretch}
+    out["scores"][sym] = sc
 os.makedirs("site", exist_ok=True)
 open("site/data.js", "w", encoding="utf-8").write("window.DATA=" + json.dumps(out, separators=(",", ":")) + ";")
 print("wrote site/data.js", os.path.getsize("site/data.js") // 1024, "KB")
